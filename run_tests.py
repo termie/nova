@@ -62,12 +62,22 @@ import sys
 
 gettext.install('nova', unicode=1)
 
+from eventlet import greenpool
+from eventlet import semaphore
 from nose import config
 from nose import core
+from nose import loader
 from nose import result
+from nose import suite
 
 from nova import log as logging
 from nova.tests import fake_flags
+
+
+log = logging.getLogger(__name__)
+
+
+EVENTED = False
 
 
 class _AnsiColorizer(object):
@@ -280,6 +290,71 @@ class NovaTestRunner(core.TextTestRunner):
                               self.config)
 
 
+class NovaTestLoader(loader.TestLoader):
+    def __init__(self, *args, **kw):
+        loader.TestLoader.__init__(self, *args, **kw)
+        self.suiteClass = suite.ContextSuiteFactory(
+                config=self.config, suiteClass=NovaContextSuite)
+
+
+class NovaContextSuite(suite.ContextSuite):
+    def run(self, result):
+        """Run tests in suite inside of suite fixtures.
+        """
+        # proxy the result for myself
+        log.debug("suite %s (%s) run called, tests: %s", id(self), self, self._tests)
+        #import pdb
+        #pdb.set_trace()
+        sem = semaphore.Semaphore(1)
+        pool = greenpool.GreenPool()
+        if self.resultProxy:
+            result, orig = self.resultProxy(result, self), result
+        else:
+            result, orig = result, result
+        try:
+            self.setUp()
+        except KeyboardInterrupt:
+            raise
+        except:
+            self.error_context = 'setup'
+            result.addError(self, self._exc_info())
+            return
+        try:
+            if EVENTED:
+                for test in self._tests:
+                    log.info('ASDASDASD %s', test)
+                    def _inner(test_):
+                        with sem:
+                            if result.shouldStop:
+                                log.debug("stopping")
+                                return
+                            # each nose.case.Test will create its own result proxy
+                            # so the cases need the original result, to avoid proxy
+                            # chains
+                            test_(orig)
+                    evt = pool.spawn(_inner, test)
+                    evt.wait()
+                #pool.waitall()
+            else:
+                for test in self._tests:
+                    if result.shouldStop:
+                        log.debug("stopping")
+                        break
+                    # each nose.case.Test will create its own result proxy
+                    # so the cases need the original result, to avoid proxy
+                    # chains
+                    test(orig)
+        finally:
+            self.has_run = True
+            try:
+                self.tearDown()
+            except KeyboardInterrupt:
+                raise
+            except:
+                self.error_context = 'teardown'
+                result.addError(self, self._exc_info())
+    pass
+
 if __name__ == '__main__':
     logging.setup()
     # If any argument looks like a test name but doesn't have "nova.tests" in
@@ -301,4 +376,8 @@ if __name__ == '__main__':
     runner = NovaTestRunner(stream=c.stream,
                             verbosity=c.verbosity,
                             config=c)
-    sys.exit(not core.run(config=c, testRunner=runner, argv=argv))
+    tloader = NovaTestLoader(config=c)
+    sys.exit(not core.run(config=c,
+                          testRunner=runner,
+                          testLoader=tloader,
+                          argv=argv))
