@@ -49,6 +49,10 @@ class FakeService(object):
         return ArbitraryObject()
 
 
+def p(f):
+    f.parallel = True
+    return f
+
 class DirectTestCase(test.TestCase):
     def setUp(self):
         super(DirectTestCase, self).setUp()
@@ -63,6 +67,7 @@ class DirectTestCase(test.TestCase):
         direct.ROUTES = {}
         super(DirectTestCase, self).tearDown()
 
+    @p
     def test_delegated_auth(self):
         req = webob.Request.blank('/fake/context')
         req.headers['X-OpenStack-User'] = 'user1'
@@ -73,6 +78,7 @@ class DirectTestCase(test.TestCase):
         self.assertEqual(data['user'], 'user1')
         self.assertEqual(data['project'], 'proj1')
 
+    @p
     def test_json_params(self):
         req = webob.Request.blank('/fake/echo')
         req.environ['openstack.context'] = self.context
@@ -83,6 +89,7 @@ class DirectTestCase(test.TestCase):
         resp_parsed = json.loads(resp.body)
         self.assertEqual(resp_parsed['data'], 'foo')
 
+    @p
     def test_post_params(self):
         req = webob.Request.blank('/fake/echo')
         req.environ['openstack.context'] = self.context
@@ -93,12 +100,14 @@ class DirectTestCase(test.TestCase):
         resp_parsed = json.loads(resp.body)
         self.assertEqual(resp_parsed['data'], 'foo')
 
+    @p
     def test_invalid(self):
         req = webob.Request.blank('/fake/invalid_return')
         req.environ['openstack.context'] = self.context
         req.method = 'POST'
         self.assertRaises(exception.Error, req.get_response, self.router)
 
+    @p
     def test_proxy(self):
         proxy = direct.Proxy(self.router)
         rv = proxy.fake.echo(self.context, data='baz')

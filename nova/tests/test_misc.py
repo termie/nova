@@ -21,6 +21,7 @@ import select
 from eventlet import greenpool
 from eventlet import greenthread
 
+from nova import log as logging
 from nova import test
 from nova import utils
 from nova.utils import parse_mailmap, str_dict_replace
@@ -113,6 +114,7 @@ class LockTestCase(test.TestCase):
 
         @utils.synchronized('testlock1', external=True)
         def f(rpipe, wpipe):
+            logging.error('LALALA')
             try:
                 os.write(wpipe, "foo")
             except OSError, e:
@@ -130,11 +132,12 @@ class LockTestCase(test.TestCase):
         if pid > 0:
             os.close(wpipe1)
             os.close(rpipe2)
-
+            logging.error('ASDASD')
             f(rpipe1, wpipe2)
         else:
             os.close(rpipe1)
             os.close(wpipe2)
+            logging.error('OFOFOFOOF')
 
             f(rpipe2, wpipe1)
             os._exit(0)

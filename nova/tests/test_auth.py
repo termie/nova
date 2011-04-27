@@ -29,6 +29,10 @@ from nova.api.ec2 import cloud
 FLAGS = flags.FLAGS
 LOG = logging.getLogger('nova.tests.auth_unittest')
 
+def p(f):
+    f.parallel = True
+    return f
+
 
 class user_generator(object):
     def __init__(self, manager, **user_state):
@@ -87,10 +91,12 @@ class _AuthManagerBaseTestCase(test.TestCase):
         self.flags(connection_type='fake')
         self.manager = manager.AuthManager(new=True)
 
+    @p
     def test_create_and_find_user(self):
         with user_generator(self.manager):
             self.assert_(self.manager.get_user('test1'))
 
+    @p
     def test_create_and_find_with_properties(self):
         with user_generator(self.manager, name="herbert", secret="classified",
                         access="private-party"):
@@ -115,6 +121,7 @@ class _AuthManagerBaseTestCase(test.TestCase):
         'export S3_URL="http://127.0.0.1:3333/"\n' +
         'export EC2_USER_ID="test1"\n')
 
+    @p
     def test_can_list_users(self):
         with user_generator(self.manager):
             with user_generator(self.manager, name="test2"):
@@ -123,6 +130,7 @@ class _AuthManagerBaseTestCase(test.TestCase):
                 self.assert_(filter(lambda u: u.id == 'test2', users))
                 self.assert_(not filter(lambda u: u.id == 'test3', users))
 
+    @p
     def test_can_add_and_remove_user_role(self):
         with user_generator(self.manager):
             self.assertFalse(self.manager.has_role('test1', 'itsec'))
@@ -131,12 +139,15 @@ class _AuthManagerBaseTestCase(test.TestCase):
             self.manager.remove_role('test1', 'itsec')
             self.assertFalse(self.manager.has_role('test1', 'itsec'))
 
+
+    @p
     def test_can_create_and_get_project(self):
         with user_and_project_generator(self.manager) as (u, p):
             self.assert_(self.manager.get_user('test1'))
             self.assert_(self.manager.get_user('test1'))
             self.assert_(self.manager.get_project('testproj'))
 
+    @p
     def test_can_list_projects(self):
         with user_and_project_generator(self.manager):
             with project_generator(self.manager, name="testproj2"):
@@ -146,33 +157,39 @@ class _AuthManagerBaseTestCase(test.TestCase):
                 self.assert_(not filter(lambda p: p.name == 'testproj3',
                                         projects))
 
+    @p
     def test_can_create_and_get_project_with_attributes(self):
         with user_generator(self.manager):
             with project_generator(self.manager, description='A test project'):
                 project = self.manager.get_project('testproj')
                 self.assertEqual('A test project', project.description)
 
+    @p
     def test_can_create_project_with_manager(self):
         with user_and_project_generator(self.manager) as (user, project):
             self.assertEqual('test1', project.project_manager_id)
             self.assertTrue(self.manager.is_project_manager(user, project))
 
+    @p
     def test_create_project_assigns_manager_to_members(self):
         with user_and_project_generator(self.manager) as (user, project):
             self.assertTrue(self.manager.is_project_member(user, project))
 
+    @p
     def test_no_extra_project_members(self):
         with user_generator(self.manager, name='test2') as baduser:
             with user_and_project_generator(self.manager) as (user, project):
                 self.assertFalse(self.manager.is_project_member(baduser,
                                                                  project))
 
+    @p
     def test_no_extra_project_managers(self):
         with user_generator(self.manager, name='test2') as baduser:
             with user_and_project_generator(self.manager) as (user, project):
                 self.assertFalse(self.manager.is_project_manager(baduser,
                                                                  project))
 
+    @p
     def test_can_add_user_to_project(self):
         with user_generator(self.manager, name='test2') as user:
             with user_and_project_generator(self.manager) as (_user, project):
@@ -180,6 +197,7 @@ class _AuthManagerBaseTestCase(test.TestCase):
                 project = self.manager.get_project('testproj')
                 self.assertTrue(self.manager.is_project_member(user, project))
 
+    @p
     def test_can_remove_user_from_project(self):
         with user_generator(self.manager, name='test2') as user:
             with user_and_project_generator(self.manager) as (_user, project):
@@ -190,6 +208,7 @@ class _AuthManagerBaseTestCase(test.TestCase):
                 project = self.manager.get_project('testproj')
                 self.assertFalse(self.manager.is_project_member(user, project))
 
+    @p
     def test_can_add_remove_user_with_role(self):
         with user_generator(self.manager, name='test2') as user:
             with user_and_project_generator(self.manager) as (_user, project):
@@ -204,6 +223,7 @@ class _AuthManagerBaseTestCase(test.TestCase):
                                                        project))
                 self.assertFalse(self.manager.is_project_member(user, project))
 
+    @p
     def test_can_generate_x509(self):
         # NOTE(todd): this doesn't assert against the auth manager
         #             so it probably belongs in crypto_unittest
@@ -230,6 +250,7 @@ class _AuthManagerBaseTestCase(test.TestCase):
             else:
                 self.assertFalse(signed_cert.verify(cloud_cert.get_pubkey()))
 
+    @p
     def test_adding_role_to_project_is_ignored_unless_added_to_user(self):
         with user_and_project_generator(self.manager) as (user, project):
             self.assertFalse(self.manager.has_role(user, 'sysadmin', project))
@@ -239,12 +260,14 @@ class _AuthManagerBaseTestCase(test.TestCase):
             self.manager.add_role(user, 'sysadmin')
             self.assertTrue(self.manager.has_role(user, 'sysadmin', project))
 
+    @p
     def test_add_user_role_doesnt_infect_project_roles(self):
         with user_and_project_generator(self.manager) as (user, project):
             self.assertFalse(self.manager.has_role(user, 'sysadmin', project))
             self.manager.add_role(user, 'sysadmin')
             self.assertFalse(self.manager.has_role(user, 'sysadmin', project))
 
+    @p
     def test_can_list_user_roles(self):
         with user_and_project_generator(self.manager) as (user, project):
             self.manager.add_role(user, 'sysadmin')
@@ -252,6 +275,7 @@ class _AuthManagerBaseTestCase(test.TestCase):
             self.assertTrue('sysadmin' in roles)
             self.assertFalse('netadmin' in roles)
 
+    @p
     def test_can_list_project_roles(self):
         with user_and_project_generator(self.manager) as (user, project):
             self.manager.add_role(user, 'sysadmin')
@@ -263,6 +287,7 @@ class _AuthManagerBaseTestCase(test.TestCase):
             # has role should be false user-level role is missing
             self.assertFalse(self.manager.has_role(user, 'netadmin', project))
 
+    @p
     def test_can_remove_user_roles(self):
         with user_and_project_generator(self.manager) as (user, project):
             self.manager.add_role(user, 'sysadmin')
@@ -270,6 +295,7 @@ class _AuthManagerBaseTestCase(test.TestCase):
             self.manager.remove_role(user, 'sysadmin')
             self.assertFalse(self.manager.has_role(user, 'sysadmin'))
 
+    @p
     def test_removing_user_role_hides_it_from_project(self):
         with user_and_project_generator(self.manager) as (user, project):
             self.manager.add_role(user, 'sysadmin')
@@ -278,6 +304,7 @@ class _AuthManagerBaseTestCase(test.TestCase):
             self.manager.remove_role(user, 'sysadmin')
             self.assertFalse(self.manager.has_role(user, 'sysadmin', project))
 
+    @p
     def test_can_remove_project_role_but_keep_user_role(self):
         with user_and_project_generator(self.manager) as (user, project):
             self.manager.add_role(user, 'sysadmin')
@@ -287,10 +314,12 @@ class _AuthManagerBaseTestCase(test.TestCase):
             self.assertFalse(self.manager.has_role(user, 'sysadmin', project))
             self.assertTrue(self.manager.has_role(user, 'sysadmin'))
 
+    @p
     def test_can_retrieve_project_by_user(self):
         with user_and_project_generator(self.manager) as (user, project):
             self.assertEqual(1, len(self.manager.get_projects('test1')))
 
+    @p
     def test_can_modify_project(self):
         with user_and_project_generator(self.manager):
             with user_generator(self.manager, name='test2'):
@@ -299,6 +328,7 @@ class _AuthManagerBaseTestCase(test.TestCase):
                 self.assertEqual('test2', project.project_manager_id)
                 self.assertEqual('new desc', project.description)
 
+    @p
     def test_modify_project_adds_new_manager(self):
         with user_and_project_generator(self.manager):
             with user_generator(self.manager, name='test2'):
@@ -306,6 +336,7 @@ class _AuthManagerBaseTestCase(test.TestCase):
                 project = self.manager.get_project('testproj')
                 self.assertTrue('test2' in project.member_ids)
 
+    @p
     def test_can_delete_project(self):
         with user_generator(self.manager):
             self.manager.create_project('testproj', 'test1')

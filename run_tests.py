@@ -64,6 +64,8 @@ gettext.install('nova', unicode=1)
 
 from eventlet import greenpool
 from eventlet import semaphore
+from eventlet import timeout
+from eventlet import tpool
 from nose import config
 from nose import core
 from nose import loader
@@ -76,8 +78,6 @@ from nova.tests import fake_flags
 
 log = logging.getLogger(__name__)
 
-
-EVENTED = False
 
 
 class _AnsiColorizer(object):
@@ -297,16 +297,18 @@ class NovaTestLoader(loader.TestLoader):
                 config=self.config, suiteClass=NovaContextSuite)
 
 
+pool = greenpool.GreenPool()
+
+
 class NovaContextSuite(suite.ContextSuite):
+    _sem = semaphore.Semaphore(10)
+
     def run(self, result):
-        """Run tests in suite inside of suite fixtures.
-        """
+        """Run tests in suite inside of suite fixtures."""
         # proxy the result for myself
         log.debug("suite %s (%s) run called, tests: %s", id(self), self, self._tests)
         #import pdb
         #pdb.set_trace()
-        sem = semaphore.Semaphore(1)
-        pool = greenpool.GreenPool()
         if self.resultProxy:
             result, orig = self.resultProxy(result, self), result
         else:
@@ -320,30 +322,25 @@ class NovaContextSuite(suite.ContextSuite):
             result.addError(self, self._exc_info())
             return
         try:
-            if EVENTED:
-                for test in self._tests:
-                    log.info('ASDASDASD %s', test)
+            for test in self._tests:
+                if isinstance(test, suite.ContextSuite):
+                    pool.spawn(_in, test)
+                    #test(orig)
+                else:
                     def _inner(test_):
-                        with sem:
+                        with self._sem:
                             if result.shouldStop:
                                 log.debug("stopping")
                                 return
                             # each nose.case.Test will create its own result proxy
                             # so the cases need the original result, to avoid proxy
                             # chains
+                            #tpool.execute(test_, orig)
                             test_(orig)
                     evt = pool.spawn(_inner, test)
-                    evt.wait()
-                #pool.waitall()
-            else:
-                for test in self._tests:
-                    if result.shouldStop:
-                        log.debug("stopping")
-                        break
-                    # each nose.case.Test will create its own result proxy
-                    # so the cases need the original result, to avoid proxy
-                    # chains
-                    test(orig)
+                    if not hasattr(test, 'parallel'):
+                        evt.wait()
+            #pool.waitall()
         finally:
             self.has_run = True
             try:
